@@ -1,0 +1,482 @@
+---
+title: "4290 Project"
+author: "Wenhang Bao,wb2304"
+date: "April 21, 2016"
+output: pdf_document
+---
+1.Data
+```{r}
+ADBE=read.csv("~/Downloads/4290/Adobe Systems Incorporated (ADBE).csv",header=T)[,5]
+AMG=read.csv("~/Downloads/4290/Affiliated Managers Group Inc. (AMG).csv",header=T)[,5]
+GOOG=read.csv("~/Downloads/4290/Alphabet Inc. (GOOG).csv",header=T)[,5]
+AMZN=read.csv("~/Downloads/4290/Amazon.com, Inc. (AMZN).csv",header=T)[,5]
+BRKA=read.csv("~/Downloads/4290/Berkshire Hathaway Inc. (BRK-A).csv",header=T)[,5]
+EA=read.csv("~/Downloads/4290/Electronic Arts Inc. (EA).csv",header=T)[,5]
+FSLR=read.csv("~/Downloads/4290/First Solar, Inc. (FSLR).csv",header=T)[,5]
+SINA=read.csv("~/Downloads/4290/SINA Corporation (SINA).csv",header=T)[,5]
+URBN=read.csv("~/Downloads/4290/Urban Outfitters Inc. (URBN).csv",header=T)[,5]
+YHOO=read.csv("~/Downloads/4290/Yahoo! Inc. (YHOO).csv",header=T)[,5]
+SP=read.csv("~/Downloads/4290/table.csv",header=T)[,5][1:114]
+
+dat=cbind(ADBE[1:114],AMG[1:114],GOOG[1:114],AMZN[1:114],BRKA[1:114],EA[1:114],FSLR[1:114],SINA[1:114],URBN[1:114],YHOO[1:114],SP)
+colnames(dat)=c("ADBE","AMG","GOOG","AMZN","BRKA","EA","FSLR","SINA","URBN","YHOO","SP")
+temp=matrix(rep(0,114*11),ncol=11,nrow=114)
+for (i in 1:114){
+	temp[i,]=dat[115-i,]
+}
+
+data=ts(temp,frequency=12,start=c(2006,11)) # Dataset
+colnames(data)=c("ADBE","AMG","GOOG","AMZN","BRKA","EA","FSLR","SINA","URBN","YHOO","SP")
+```
+
+
+2.Descriptive Statistics
+```{r}
+library(ggplot2)
+Mean=apply(data,2,mean);Mean
+Var=cov(data);Var
+SD=sqrt(diag(Var));SD
+library(timeDate)
+
+par(mfrow=c(2,5))
+#Price
+for (i in 1:10){
+	plot(data[,i],xlab=colnames(data)[i])
+}
+
+#Return
+lag.data=lag(data,1)
+options(digit=3)
+return=(data[2:114,]-lag.data[1:113,])/lag.data[1:113,]
+return=ts(return,frequency=12,start=c(2006,12))
+par(mfrow=c(2,5))
+
+for (i in 1:10){
+	plot(return[,i],type="l",xlab=colnames(data)[i])
+  lines(return[,11],col="red")
+}
+
+#Equity Curve
+E=matrix(rep(0,114*11),ncol=11,nrow=114)
+E[1,]=c(rep(1,11))
+i=2
+for(i in 2:114){
+	E[i,]=E[i-1,]+E[i-1,]*return[i-1,]
+}
+E=ts(E,frequency=12,start=c(2006,11))
+par(mfrow=c(2,5))
+for(i in 1:10){
+	plot(E[,i],type="l",xlab=colnames(data)[i])
+  lines(E[,11],col="red")
+}
+
+#Histogram
+par(mfrow=c(2,5))
+for (i in 1:10) {
+	hist(return[,i],xlab=colnames(data)[i])
+}
+
+#boxpolt
+par(mfrow=c(1,1))
+boxplot(return[,1:10])
+
+
+#qq-plot
+par(mfrow=c(2,5))
+for (i in 1:10) {
+	qqnorm(y=return[,i],xlab=colnames(data)[i])
+	qqline(return[,i])
+}
+
+
+#Sharpe ratio
+risk.free=0.03/12
+mean.return=apply(return,2,mean)
+var.return=apply(return,2,var)
+sd.return=sqrt(var.return)
+cov.return=cov(return)
+Sharpe=(mean.return[1:10]*12-risk.free*12)/(sd.return[1:10]*sqrt(12));Sharpe
+which.max(Sharpe)
+
+#Beta
+beta=matrix(nrow=10)
+for(i in 1:10){
+  beta[i]=summary(lm(I(return[,i]-risk.free)~I(return[,11]-risk.free)))$coefficients[2,1]
+}
+beta
+which.max(beta)
+
+#Annual numbers
+mean.return.annual=12*mean.return;mean.return.annual
+sd.return.annual=sqrt(12)*sd.return;sd.return.annual
+(mean.return.annual[1:10]-risk.free*12)/sd.return.annual[1:10]
+par(mfrow=c(1,1))
+stocks=return[,1:10]
+pairs(data.frame(stocks),cex=0.5)
+
+#Sample Covariance Matrix
+cor(return[,1:10])
+
+#Stationary Test
+library("tseries")
+tt=list()
+p_value=c()
+for (i in 1:10){
+  tt[[i]]=adf.test(return[,i])
+  p_value[i]=tt[[i]]$p.value
+}
+t(p_value)
+### Distribution of the stocks
+par(mfrow=c(2,5))
+for (i in 1:10){
+  plot(density(return[,i]),main="",xlab=colnames(dat)[i],lty=1)
+}
+###Fit normal Distribution
+i=8
+for (i in 1:10){
+  print(ks.test(return[,i],"pnorm",mean=mean(return[,i]
+  ),sd=sd(return[,i]))$p.value
+  )
+}
+```
+3.Portfolio Theory
+```{r}
+library(Ecfun)
+library(quadprog)
+
+s.mean=apply(stocks,2,mean)
+s.cov=cov(stocks)
+s.sd=sqrt(diag(s.cov))
+Amat=cbind(rep(1,10),s.mean)
+muP=seq(0,0.04,length=1000)
+sdP=muP
+weights=matrix(0,nrow=1000,ncol=10)
+for(i in 1:length(muP)){
+	bvec=c(1,muP[i])
+	result=solve.QP(Dmat=2*s.cov,dvec=rep(0,10),Amat=Amat,bvec=bvec,meq=2)
+	sdP[i]=sqrt(result$value)
+	weights[i,]=result$solution
+}
+par(mfrow=c(1,1))
+plot(sdP,muP,type="l",xlim=c(0,0.15),ylim=c(0,0.05))
+
+#MVP
+ind=(sdP==min(sdP))
+weights[ind,]
+points(sdP[ind],muP[ind],cex=2,pch="+")
+VaR.mvp=-100000*(muP[ind]+sdP[ind]*qnorm(0.05))
+ES.mvp=100000*(-muP[ind]+sdP[ind]*(dnorm(qnorm(0.05))/0.05))
+
+#Annually
+muP[ind]*12
+sdP[ind]*sqrt(12)
+
+#VaR
+VaR=vector()
+for (i in 1:10) {
+  VaR[i] = - 100000*(s.mean[i]+s.sd[i]*qnorm(0.05))
+}
+portfolio_var = -100000*(muP[ind]+sdP[ind]*qnorm(0.05))
+
+#Tangency Portfolio
+points(0,risk.free,cex=4,pch="*")
+sharpe=(muP-risk.free)/sdP
+ind2=(sharpe==max(sharpe))
+points(sdP[ind2],muP[ind2],cex=2,pch="+")
+weights[ind2,]
+muP[ind2]#expected return
+sdP[ind2]#expected standard deviation
+sdP[ind2]^2#expected variance
+lines(c(0,2),risk.free+c(0,2)*(muP[ind2]-risk.free)/sdP[ind2],lwd=2,lty=1)
+sdP[ind2]
+VaR.t=-100000*(muP[ind2]+sdP[ind2]*qnorm(0.05))
+ES.t=100000*(-muP[ind2]+sdP[ind2]*(dnorm(qnorm(0.05))/0.05))
+#Frontier
+ind3=(muP>muP[ind])
+lines(sdP[ind3],muP[ind3],type="l",lwd=3,col="red")
+```
+
+```{r}
+#Short sale not allowed 
+muP.cons = seq(min(s.mean) + 0.0001, max(s.mean) - 0.0001,
+length = 1000)
+sdP.cons=muP.cons
+Amat.cons=cbind(rep(1,10),s.mean,diag(1,nrow=10))
+weights.cons=matrix(0,nrow=1000,ncol=10)
+for(i in 1:length(muP)){
+	bvec=c(1,muP.cons[i],rep(0,10))
+	result=solve.QP(Dmat=2*s.cov,dvec=rep(0,10),Amat=Amat.cons,bvec=bvec,meq=2)
+	sdP.cons[i]=sqrt(result$value)
+	weights.cons[i,]=result$solution
+}
+par(mfrow=c(1,1))
+plot(sdP.cons,muP.cons,type="l",xlim=c(0,0.15),ylim=c(0,0.05))
+
+#MVP
+ind.cons=(sdP.cons==min(sdP.cons))
+weights.cons[ind.cons,]
+points(sdP.cons[ind.cons],muP.cons[ind.cons],cex=2,pch="+")
+VaR.norm=-100000*(s.mean+s.sd*qnorm(0.05))
+ES.nss.mvp=100000*(-muP.cons[ind.cons]+sdP.cons[ind.cons]*(dnorm(qnorm(0.05))/0.05))
+#Annually
+muP.cons[ind.cons]*12
+sdP.cons[ind.cons]*sqrt(12)
+
+#VaR
+VaR=vector()
+for (i in 1:10) {
+  VaR[i] = - 100000*(s.mean[i]+s.sd[i]*qnorm(0.05))
+}
+portfolio_var = -100000*(muP.cons[ind.cons]+sdP[ind.cons]*qnorm(0.05))
+
+#Tangency Portfolio
+points(0,risk.free,cex=4,pch="*")
+sharpe.cons=(muP.cons-risk.free)/sdP.cons
+ind.cons2=(sharpe.cons==max(sharpe.cons))
+points(sdP.cons[ind.cons2],muP.cons[ind.cons2],cex=2,pch="+")
+weights.cons[ind.cons2,]
+muP.cons[ind.cons2]#expected return
+sdP.cons[ind.cons2]#expected standard deviation
+sdP.cons[ind.cons2]^2#expected variance
+lines(c(0,2),risk.free+c(0,2)*(muP.cons[ind.cons2]-risk.free)/sdP.cons[ind.cons2],lwd=2,lty=1)
+VaR.t.cons=-100000*(muP.cons[ind.cons2]+sdP.cons[ind.cons2]*qnorm(0.05))
+ES.t.cons=100000*(-muP.cons[ind.cons2]+sdP.cons[ind.cons2]*(dnorm(qnorm(0.05))/0.05))
+
+#Frontier
+ind.cons3=(muP.cons>muP.cons[ind.cons])
+lines(sdP.cons[ind.cons3],muP.cons[ind.cons3],type="l",lwd=3,col="red")
+
+```
+4.Asset Allocation
+```{r}
+#Only risky assets
+muP[which.min(abs(muP-0.005))]
+sdP[which.min(abs(muP-0.005))]
+100000*weights[which.min(abs(muP-0.005)),]
+#VaR and Shortfall
+VaR.1=-100000*(muP[which.min(abs(muP-0.005))]+sdP[which.min(abs(muP-0.005))]*qnorm(0.05))
+shortfall=100000*(-muP[which.min(abs(muP-0.005))]+sdP[which.min(abs(muP-0.005))]*(dnorm(qnorm(p = 0.05))/0.05))
+
+
+# Incorporate with T-bills
+# ind2=tangency portfolio
+muP[ind2]
+sdP[ind2]
+sharpe[ind2]
+expected.risk=(0.005-risk.free)/sharpe[ind2]
+w=expected.risk/sdP[ind2]  #weights on risky assets
+w*weights[ind2] #weights on each stocks 
+100000*w*weights[ind2]
+VaR.2=-100000*(0.005+sdP[ind2]*w*qnorm(0.05))
+shortfall.1=100000*(-muP[ind2]+sdP[ind2]*(dnorm(qnorm(p = 0.05))/0.05))
+
+
+#No short sale
+#Only risky assets
+muP.cons[which.min(abs(muP.cons-0.005))]
+sdP.cons[which.min(abs(muP.cons-0.005))]
+100000*weights[which.min(abs(muP.cons-0.005)),]
+#VaR and Shortfall
+VaR.cons=-100000*(muP.cons[which.min(abs(muP.cons-0.005))]+sdP.cons[which.min(abs(muP.cons-0.005))]*qnorm(0.05))
+shortfall.cons=100000*(-muP.cons[which.min(abs(muP.cons-0.005))]+sdP.cons[which.min(abs(muP.cons-0.005))]*(dnorm(qnorm(p = 0.05))/0.05))
+
+
+# Incorporate with T-bills
+# ind2=tangency portfolio
+muP.cons[ind.cons2]
+sdP.cons[ind.cons2]
+sharpe[ind.cons2]
+expected.risk2=(0.005-risk.free)/sharpe.cons[ind.cons2]
+w.cons=expected.risk2/sdP[ind.cons2]  #weights on risky assets
+w.cons*weights.cons[ind.cons2] #weights on each stocks 
+100000*w.cons*weights.cons[ind.cons2]
+VaR.cons2=-100000*(0.005+sdP.cons[ind.cons2]*w.cons*qnorm(0.05))
+shortfall.cons2=100000*(-muP.cons[ind.cons2]+sdP.cons[ind.cons2]*(dnorm(qnorm(p = 0.05))/0.05))
+```
+
+5.PCA
+```{r}
+cor(stocks)
+princomp(stocks)
+summary(princomp(stocks))
+par(mfrow=c(1,1))
+plot(princomp(stocks))
+eig = eigen(cor(stocks))
+eig$values
+eig$vectors
+```
+
+6.Risk Management
+```{r}
+#VaR and shortfall with normality
+VaR.norm=-100000*(s.mean+s.sd*qnorm(0.05))
+ES.norm=100000*(-s.mean+s.sd*(dnorm(qnorm(0.05))/0.05))
+VaR.norm
+ES.norm
+
+#VaR and shortfall with nonparametric
+VaR.nonp=vector()
+ES.nonp=vector()
+t=vector()
+for(i in 1:10)
+{
+  VaR.nonp[i]=-100000*quantile(return[,i],0.05)
+  ES.nonp[i]=-100000*sum(return[,i][return[,i]<quantile(return[,i],0.05)])/sum(as.numeric(return[,i]<quantile(return[,i],0.05)))
+}
+VaR.nonp
+ES.nonp
+
+#bootstraping
+#bootstrap with normality
+num.boot=1000
+n=length(return[,1])
+resample.VaR.norm=matrix(nrow=num.boot,ncol=10)
+SD.norm=vector()
+ci.norm.upper=vector()
+ci.norm.lower=vector()
+for(i in 1:10)
+{
+  resample.VaR.norm[,i]=rep(0,num.boot)
+  for(j in 1:num.boot)
+  {
+    r=sample(return[,i],n,replace=TRUE)
+    resample.VaR.norm[j,i]=-100000*(mean(r)+sd(r)*qnorm(0.05))
+  }
+  SD.norm[i]=sqrt(1/(num.boot-1)*sum((resample.VaR.norm[j,i]- mean(resample.VaR.norm[,i]))^2))
+  ci.norm.upper[i]=quantile(resample.VaR.norm[,i],0.975)
+  ci.norm.lower[i]=quantile(resample.VaR.norm[,i],0.025)
+}
+SD.norm
+ci.norm.upper
+ci.norm.lower
+
+#bootstrap with nonparametric
+num.boot=1000
+n=length(return[,1])
+resample.VaR.nonp=matrix(nrow=num.boot,ncol=10)
+SD.nonp=vector()
+ci.nonp.upper=vector()
+ci.nonp.lower=vector()
+for(i in 1:10)
+{
+  resample.VaR.nonp[,i]=rep(0,num.boot)
+  for(j in 1:num.boot)
+  {
+    r=sample(return[,i],n,replace=TRUE)
+    resample.VaR.nonp[j,i]=-100000*quantile(r,0.05)
+  }
+  SD.nonp[i]=sqrt(1/(num.boot-1)*sum((resample.VaR.nonp[j,i]-mean(resample.VaR.nonp[,i]))^2))
+  ci.nonp.upper[i]=quantile(resample.VaR.nonp[,i],0.975)
+  ci.nonp.lower[i]=quantile(resample.VaR.nonp[,i],0.025)
+}
+SD.nonp
+ci.nonp.upper
+ci.nonp.lower
+```
+
+7.Copula
+```{r}
+library(MASS)
+library(copula)
+library(fGarch)
+library(QRM)
+
+n=length(return[,i])
+fit.par=matrix(nrow=11,ncol=3)
+
+for (i in 1:11){
+start = c(mean(return[,i]), sd(return[,i]), 5)
+loglik_t = function(beta) sum( - dt((return[,i] - beta[1]) / beta[2],
+beta[3], log = TRUE) + log(beta[2]) )
+fit_t = optim(start, loglik_t, hessian = T,
+method = "L-BFGS-B", lower = c(-1, 0.001, 1))
+fit.par[i,]=fit_t$par
+}
+
+
+est.norm=matrix(ncol=2,nrow=11)
+for(i in 1:11){
+    est.norm[i,]=as.numeric(fitdistr(return[,i],"normal")$estimate)
+    est.norm[i,2]=est.norm[i,2]^2
+}
+
+n=length(return[,1])
+data1=matrix(nrow=nrow(stocks),ncol=ncol(stocks))
+data2=matrix(nrow=nrow(stocks),ncol=ncol(stocks))
+data3=matrix(nrow=nrow(stocks),ncol=ncol(stocks))
+for(i in 1:10){
+  data1[,i]=pstd(return[,i],fit.par[i,1],fit.par[i,2],fit.par[i,3])
+  data2[,i]=rank(return[,i])/(1+n)
+  data3[,i]=pnorm(return[,i],est.norm[i,1],est.norm[i,2])
+}
+
+omega_t=cor(data1)[lower.tri(cor(data1))]
+omega_norm=cor(data3)[lower.tri(cor(data3))]
+
+fit.tcopula(data1,method="Kendall")
+
+cop_norm=normalCopula(param=omega_norm,dim=10,dispstr='un')
+fit_norm=fitCopula(data=data1,copula=cop_norm,method='ml')
+fit_norm2=fitCopula(data=data2,copula=cop_norm,method="ml")
+
+cop_t=tCopula(omega_t,dim=10,dispstr="un")
+fit_t=fitCopula(data=data1,copula=cop_t,method="ml")
+fit_t2=fitCopula(data=data2,copula=cop_t,method="ml")
+
+cop_gum=archmCopula(family="gumbel",dim=10,param=5)
+fit_gum=fitCopula(data=data1,copula=cop_gum,method="ml")
+fit_gum2=fitCopula(data=data2,copula=cop_gum,method="ml")
+
+cop_clay=archmCopula(family="clayton",dim=10,param=5)
+fit_clay=fitCopula(data=data1,copula=cop_clay,method="ml")
+fit_clay2=fitCopula(data=data2,copula=cop_clay,method="ml")
+
+c(AIC(fit_norm,fit_t,fit_gum,fit_clay))
+c(AIC(fit_norm2,fit_t2,fit_gum2,fit_clay2))
+
+```
+
+8.MCMC
+```{r,summary=TRUE}
+library(rjags)
+library(Ecdat)
+N=length(return[,1])
+i=2
+mcmc.est=matrix(0,nrow=11,ncol=3)
+for (i in 1:11){
+  print(c("Posterior Distribution of",colnames(data)[i]))
+  r=return[,i]
+  data.mcmc=list(r=r,N=N)
+inits=function(){list(mu=rnorm(1,mean=mean(r),sd=2*sd(r)),tau=runif(1,0.2/var(r),2/var(r)),k=runif(1,2.5,10))}
+
+t1=proc.time()
+univt.mcmc=jags.model("~/Downloads/bugs/univt.bug",data=data.mcmc,inits=inits,n.chains=3,n.adapt=1000,quiet=FALSE)
+nthin = 20
+univt.coda = coda.samples(univt.mcmc, c("mu","k","sigma"), 100*nthin, thin = nthin)
+mcmc.est[i,]=summary(univt.coda,digits=2)$statistics[,1]
+
+t2 = proc.time()
+(t2-t1)/60
+
+par(mfrow = c(3, 2))
+plot(univt.coda, auto.layout = F)
+dic.samples(univt.mcmc, 100*nthin, thin = nthin, type = "pD")
+}
+colnames(mcmc.est)=c("k","mu","sigma")
+rownames(mcmc.est)=c("ADBE","AMG","GOOG","AMZN","BRKA","EA","FSLR","SINA","URBN","YHOO","SP")
+
+var.mcmc=-100000*(mcmc.est[,2]+mcmc.est[,3]*qt(0.05,mcmc.est[,1]))
+es.mcmc=100000*(-mcmc.est[,2]+mcmc.est[,3]*(dt(qt(0.05,mcmc.est[,1]),mcmc.est[,1])/0.05))
+var.mcmc
+es.mcmc
+s1=rstd(5000,mcmc.est[1,2],mcmc.est[1,3],mcmc.est[1,1])
+s2=rstd(5000,fit.par[1,1],fit.par[1,2],fit.par[1,3])
+par(mfrow=c(1,1))
+xfit=seq(-0.5,0.5,0.001)
+yfit=dstd(xfit,mcmc.est[1,2],mcmc.est[1,3],mcmc.est[1,1])
+yfit2=dstd(xfit,fit.par[1,1],fit.par[1,2],fit.par[1,3])
+help.search("plot distribution")
+plot(yfit~xfit,type="l",ylim=c(0,8),xlim=c(-0.5,0.5))
+lines(yfit2~xfit,type="l",col="red")
+legend("topright",legend=c("MCMC","Original"),lty=c(1,1),col=c("black","red"),cex = 1, pt.cex = 1, text.font = 0.5)
+```
